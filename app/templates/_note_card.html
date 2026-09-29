@@ -1,0 +1,119 @@
+{% set is_owner = current_user.is_authenticated and note.user_id == current_user.id %}
+{% set can_delete = can('delete_own_note') if is_owner else can('delete_any_note') %}
+{% set can_edit   = can('edit_own_note')   if is_owner else can('edit_any_note') %}
+
+<article id="note-{{ note.id }}"
+         class="note-card note-{{ note.severity }}"
+         data-note-id="{{ note.id }}"
+         aria-labelledby="note-{{ note.id }}-meta">
+
+  {# Header: author, time, status #}
+  <header class="note-card-head">
+    <div class="note-meta" id="note-{{ note.id }}-meta">
+      <span class="note-author">{{ note.author.username }}</span>
+      <span class="role-pill role-{{ note.author.role }}"
+            title="Author role">{{ note.author.role }}</span>
+      <span class="note-time"
+            title="{{ note.created_at.strftime('%b %d, %Y %H:%M UTC') }}">
+        {{ note.created_at.strftime('%b %d, %H:%M') }}
+      </span>
+      {% if note.updated_at and note.updated_at != note.created_at %}
+        <span class="note-edited muted"
+              title="Last edited {{ note.updated_at.strftime('%b %d, %H:%M UTC') }}">
+          · edited
+        </span>
+      {% endif %}
+    </div>
+
+    <div class="note-head-right">
+      <span class="note-sev note-{{ note.severity }}"
+            title="Severity">{{ note.severity }}</span>
+      <span class="note-status note-status-{{ note.status }}"
+            title="Workflow status">{{ note.status.replace('_', ' ') }}</span>
+    </div>
+  </header>
+
+  {# Body — view mode #}
+  <div class="note-view">
+    <p class="note-body">{{ note.body }}</p>
+
+    {% if note.action_taken %}
+      <p class="note-action">
+        <span class="note-action-label" aria-hidden="true">↳</span>
+        <strong>Action:</strong> {{ note.action_taken }}
+      </p>
+    {% endif %}
+
+    {% if note.tags %}
+      <ul class="note-tags" aria-label="Tags">
+        {% for t in note.tags %}
+          <li class="note-tag">{{ t }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+
+  {# Body — edit mode (hidden by default) #}
+  {% if can_edit %}
+  <form class="note-edit-form" hidden
+        hx-put="{{ url_for('main.note_detail', note_id=note.id) }}"
+        hx-target="#note-{{ note.id }}"
+        hx-swap="outerHTML">
+    <label class="sr-only" for="edit-body-{{ note.id }}">Edit note</label>
+    <textarea id="edit-body-{{ note.id }}" name="body" required>{{ note.body }}</textarea>
+
+    <div class="note-edit-row">
+      <label for="edit-sev-{{ note.id }}" class="sr-only">Severity</label>
+      <select id="edit-sev-{{ note.id }}" name="severity">
+        {% for s in ['info', 'watch', 'critical'] %}
+          <option value="{{ s }}" {% if note.severity == s %}selected{% endif %}>
+            {{ s|capitalize }}
+          </option>
+        {% endfor %}
+      </select>
+
+      <label for="edit-status-{{ note.id }}" class="sr-only">Status</label>
+      <select id="edit-status-{{ note.id }}" name="status">
+        {% for s in ['open', 'in_progress', 'resolved'] %}
+          <option value="{{ s }}" {% if note.status == s %}selected{% endif %}>
+            {{ s.replace('_', ' ')|capitalize }}
+          </option>
+        {% endfor %}
+      </select>
+
+      <span class="note-edit-hint muted" id="edit-hint-{{ note.id }}" aria-live="polite"></span>
+    </div>
+
+    <div class="note-actions">
+      <button type="submit" class="btn-tiny">Save</button>
+      <button type="button" class="btn-tiny"
+              data-cancel-edit="note-{{ note.id }}">Cancel</button>
+    </div>
+  </form>
+  {% endif %}
+
+  {# Footer actions #}
+  {% if can_edit or can_delete %}
+  <footer class="note-actions note-actions-footer">
+    {% if can_edit %}
+      <button type="button" class="btn-tiny"
+              data-toggle-edit="note-{{ note.id }}"
+              aria-label="Edit note from {{ note.author.username }}">
+        Edit
+      </button>
+    {% endif %}
+
+    {% if can_delete %}
+      <button type="button" class="btn-tiny btn-danger"
+              hx-delete="{{ url_for('main.note_detail', note_id=note.id) }}"
+              hx-target="#note-{{ note.id }}"
+              hx-swap="outerHTML"
+              hx-confirm="Delete this {{ note.severity }} note? This cannot be undone."
+              aria-label="Delete note from {{ note.author.username }}">
+        Delete
+      </button>
+    {% endif %}
+  </footer>
+  {% endif %}
+
+</article>

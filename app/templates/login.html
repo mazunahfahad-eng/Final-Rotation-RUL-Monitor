@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in — RUL Monitor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="login-body">
+  <main class="login-card" role="main">
+    <header>
+      <h1>RUL Monitor</h1>
+      <p class="login-sub">Sign in with your maintenance account</p>
+    </header>
+
+    {# aria-live so screen readers announce auth errors when they appear. #}
+    <div id="login-flash" aria-live="polite" aria-atomic="true">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}" role="alert">{{ msg }}</div>
+        {% endfor %}
+      {% endwith %}
+    </div>
+
+    <form method="post" novalidate id="login-form"
+          action="{{ url_for('auth.login', next=request.args.get('next')) }}">
+      <label for="username">Account ID</label>
+      <input id="username" name="username" type="text"
+             autocomplete="username" autocapitalize="off" spellcheck="false"
+             inputmode="text" autofocus required
+             aria-describedby="username-hint">
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password"
+             autocomplete="current-password" required
+             aria-describedby="caps-hint">
+      <span id="caps-hint" class="field-hint caps-warn" hidden>Caps Lock is on.</span>
+
+      <label class="remember">
+        <input type="checkbox" name="remember" value="1">
+        Keep me signed in on this device
+      </label>
+
+      <button type="submit" id="login-submit">
+        <span class="btn-label">Sign in</span>
+        <span class="btn-spinner" hidden aria-hidden="true"></span>
+      </button>
+    </form>
+  </main>
+
+  <script>
+    // Caps Lock warning — prevents a common auth failure mode.
+    (function () {
+      var pw = document.getElementById("password");
+      var warn = document.getElementById("caps-hint");
+      if (!pw || !warn) return;
+      var check = function (e) {
+        var on = e.getModifierState && e.getModifierState("CapsLock");
+        warn.hidden = !on;
+      };
+      pw.addEventListener("keydown", check);
+      pw.addEventListener("keyup", check);
+      pw.addEventListener("blur", function () { warn.hidden = true; });
+    })();
+
+    // Submit feedback — disables the button so a user can't double-submit.
+    (function () {
+      var form = document.getElementById("login-form");
+      var btn = document.getElementById("login-submit");
+      form.addEventListener("submit", function () {
+        btn.disabled = true;
+        btn.querySelector(".btn-label").textContent = "Signing in…";
+        btn.querySelector(".btn-spinner").hidden = false;
+      });
+    })();
+  </script>
+</body>
+</html>

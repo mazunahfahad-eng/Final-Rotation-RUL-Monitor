@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Alerts — RUL Monitor{% endblock %}
+{% block content %}
+
+{# Header + status buckets (HCI: summary at the top) #}
+<div class="page-header">
+  <div>
+    <h1>Work queue</h1>
+    <p class="muted">Alerts fired by the fleet model, worst first.</p>
+  </div>
+
+  <nav class="sort-switch" aria-label="Sort alerts">
+    <a class="ds-btn {% if sort == 'rul' or not sort %}ds-active{% endif %}"
+       href="{{ url_for('main.alerts', sort='rul') }}">By RUL</a>
+    <a class="ds-btn {% if sort == 'oldest' %}ds-active{% endif %}"
+       href="{{ url_for('main.alerts', sort='oldest') }}">Oldest open</a>
+    <a class="ds-btn {% if sort == 'mine' %}ds-active{% endif %}"
+       href="{{ url_for('main.alerts', sort='mine') }}"
+       title="Only alerts assigned to you">Assigned to me</a>
+  </nav>
+</div>
+
+<section class="kpi-strip" aria-label="Alert summary" aria-live="polite">
+  <div class="kpi kpi-critical">
+    <span class="kpi-num" id="a-open">
+      {{ alerts|selectattr('status', 'equalto', 'open')|list|length }}
+    </span>
+    <span class="kpi-label">Open</span>
+  </div>
+  <div class="kpi kpi-watch">
+    <span class="kpi-num" id="a-ack">
+      {{ alerts|selectattr('status', 'equalto', 'acknowledged')|list|length }}
+    </span>
+    <span class="kpi-label">Acknowledged</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-num" id="a-snoozed">
+      {{ alerts|selectattr('status', 'equalto', 'snoozed')|list|length }}
+    </span>
+    <span class="kpi-label">Snoozed</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-num">{{ alerts|length }}</span>
+    <span class="kpi-label">Total shown</span>
+  </div>
+</section>
+
+{# Alerts table #}
+<table class="alerts-table" aria-describedby="alerts-caption">
+  <caption id="alerts-caption" class="sr-only">
+    Alerts across the fleet, sorted worst-first by predicted remaining useful life.
+  </caption>
+  <thead>
+    <tr>
+      <th scope="col">Engine</th>
+      <th scope="col">Demonstration fault mode</th>
+      <th scope="col">RUL</th>
+      <th scope="col">Top driver</th>
+      <th scope="col">Status</th>
+      <th scope="col">Assigned</th>
+      <th scope="col">Opened</th>
+      <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
+    </tr>
+  </thead>
+  <tbody id="alerts-body" aria-live="polite">
+    {% for alert in alerts %}
+      {% include "_alert_row.html" %}
+    {% else %}
+      <tr>
+        <td colspan="8" class="empty-row">
+          <p><strong>The queue is clear.</strong></p>
+          <p class="muted">
+            New alerts appear here automatically when an engine's predicted
+            RUL drops below 20 cycles.
+          </p>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p class="muted disclaimer" role="note">
+  Acknowledging an alert assigns it to you and records it in the audit log.
+  Snoozing requires a reason and a duration.
+</p>
+
+{% endblock %}

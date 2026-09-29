@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Fleet — RUL Monitor{% endblock %}
+{% block content %}
+
+{# Live KPI strip + streamer status (HCI: visibility of system status) #}
+<section class="kpi-strip" aria-labelledby="kpi-heading" aria-live="polite">
+  <h2 id="kpi-heading" class="sr-only">Fleet summary</h2>
+
+  <a class="kpi kpi-critical" href="?status=critical"
+     title="Engines with 20 cycles or fewer remaining">
+    <span class="kpi-num" id="k-critical">{{ counts.critical }}</span>
+    <span class="kpi-label">Critical</span>
+  </a>
+  <a class="kpi kpi-watch" href="?status=watch"
+     title="Engines with 50 cycles or fewer remaining">
+    <span class="kpi-num" id="k-watch">{{ counts.watch }}</span>
+    <span class="kpi-label">Watch</span>
+  </a>
+  <a class="kpi kpi-healthy" href="?status=healthy"
+     title="Engines with more than 50 cycles remaining">
+    <span class="kpi-num" id="k-healthy">{{ counts.healthy }}</span>
+    <span class="kpi-label">Healthy</span>
+  </a>
+
+  <div class="kpi kpi-stream" title="Live telemetry status">
+    <span class="stream-dot" id="stream-dot" data-state="connecting"></span>
+    <span class="kpi-stream-label">
+      <span id="stream-state">connecting…</span>
+      <small id="stream-detail" class="muted"></small>
+    </span>
+    <span class="kpi-stream-time muted" id="last-update">
+      {% if last_update %}{{ last_update.strftime('%H:%M:%S UTC') }}{% endif %}
+    </span>
+  </div>
+</section>
+
+{# Header + dataset switcher (HCI: match real world, user control) #}
+<div class="page-header">
+  <h1>Fleet</h1>
+
+  <nav class="dataset-switch" aria-label="Dataset">
+    <a class="ds-btn {% if not dataset_filter %}ds-active{% endif %}"
+       href="{{ url_for('main.dashboard', q=q, status=status_filter) }}">All</a>
+    <a class="ds-btn {% if dataset_filter == 'FD001' %}ds-active{% endif %}"
+       href="{{ url_for('main.dashboard', dataset='FD001', q=q, status=status_filter) }}"
+       title="100 units · single fault mode (HPC)">FD001</a>
+    <a class="ds-btn {% if dataset_filter == 'FD003' %}ds-active{% endif %}"
+       href="{{ url_for('main.dashboard', dataset='FD003', q=q, status=status_filter) }}"
+       title="100 units · two fault modes (HPC + Fan)">FD003</a>
+  </nav>
+</div>
+
+{# Filters (HCI: user control, error prevention) #}
+<form class="filter-bar" method="get" role="search">
+  {% if dataset_filter %}<input type="hidden" name="dataset" value="{{ dataset_filter }}">{% endif %}
+  <input type="search" name="q" value="{{ q }}"
+         placeholder="Search engine tag, e.g. EG-014   (press /)"
+         aria-label="Search engines">
+  <select name="status" aria-label="Filter by status">
+    <option value="" {% if not status_filter %}selected{% endif %}>All statuses</option>
+    <option value="critical" {% if status_filter == 'critical' %}selected{% endif %}>Critical</option>
+    <option value="watch" {% if status_filter == 'watch' %}selected{% endif %}>Watch</option>
+    <option value="healthy" {% if status_filter == 'healthy' %}selected{% endif %}>Healthy</option>
+    <option value="unknown" {% if status_filter == 'unknown' %}selected{% endif %}>Unknown</option>
+  </select>
+  <button type="submit" class="btn-primary">Apply</button>
+  {% if q or status_filter or dataset_filter %}
+    <a class="btn-link" href="{{ url_for('main.dashboard') }}">Clear filters</a>
+  {% endif %}
+</form>
+
+{# Fleet table #}
+<table class="fleet-table" aria-describedby="fleet-caption">
+  <caption id="fleet-caption" class="sr-only">
+    Engines sorted worst-first by predicted remaining useful life.
+  </caption>
+  <thead>
+    <tr>
+      <th scope="col">Status</th>
+      <th scope="col">Engine</th>
+      <th scope="col" aria-sort="ascending">RUL</th>
+      <th scope="col">Confidence</th>
+      <th scope="col">Trend</th>
+      <th scope="col">Last note</th>
+      <th scope="col">Updated</th>
+      <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
+    </tr>
+  </thead>
+  <tbody id="fleet-body">
+    {% for e in engines %}
+      {% set p = e.latest_prediction %}
+      <tr class="fleet-row fleet-row-{{ e.status }}"
+          data-engine="{{ e.id }}"
+          tabindex="0"
+          aria-label="Engine {{ e.tag }}, status {{ e.status }}{% if p %}, RUL {{ p.rul }} cycles{% endif %}">
+        <td>
+          <span class="status-chip status-{{ e.status }}">
+            <span class="status-dot" aria-hidden="true"></span>
+            {{ e.status|capitalize }}
+          </span>
+        </td>
+        <td>
+          <a href="{{ url_for('main.engine_detail', engine_id=e.id) }}"
+             class="engine-link">{{ e.tag }}</a>
+          <span class="dataset-pill">{{ e.dataset }}</span>
+          {% if e.fault_mode %}<span class="fault-pill" title="Demonstration fault mode">{{ e.fault_mode }}</span>{% endif %}
+        </td>
+        <td>
+          {% if p %}
+            <span class="rul-value">{{ p.rul }}</span>
+            <span class="rul-unit">cycles</span>
+            <div class="rul-days">~{{ (p.rul / 6)|round(1) }} days</div>
+          {% else %}
+            <span class="muted">no prediction</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if p %}
+            <span class="conf conf-{{ p.confidence_label }}">
+              {{ p.confidence_label|capitalize }}
+            </span>
+            <div class="ci-text" title="80% confidence interval">
+              {{ p.ci_low }}–{{ p.ci_high }}
+            </div>
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          <canvas class="sparkline" data-engine="{{ e.id }}"
+                  width="100" height="30"
+                  role="img"
+                  aria-label="RUL trend for {{ e.tag }}"></canvas>
+        </td>
+        <td class="last-note-cell">
+          {% if e.notes %}
+            <span title="{{ e.notes[0].body }}">
+              {{ e.notes[0].body[:60] }}{% if e.notes[0].body|length > 60 %}…{% endif %}
+            </span>
+          {% else %}
+            <span class="muted">No notes yet</span>
+          {% endif %}
+        </td>
+        <td class="muted updated-cell"
+            data-epoch="{{ e.last_reading_at.timestamp() if e.last_reading_at else '' }}">
+          {{ e.last_reading_at.strftime('%b %d, %H:%M') if e.last_reading_at else '—' }}
+        </td>
+        <td class="col-actions">
+          <a class="btn-small"
+             href="{{ url_for('main.engine_detail', engine_id=e.id) }}?tab=notes">
+            Note
+          </a>
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="8" class="empty-row">
+          <p><strong>No engines match this filter.</strong></p>
+          <p class="muted">
+            Try clearing filters, or pick a different dataset.
+            {% if q or status_filter or dataset_filter %}
+              <a href="{{ url_for('main.dashboard') }}">Clear all filters</a>.
+            {% endif %}
+          </p>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{# Pager only when needed — HCI: don't show controls you can't use. #}
+{% if engines|length > 50 %}
+  <nav class="pager" aria-label="Pagination">
+    <span class="muted">Showing {{ engines|length }} engines.</span>
+  </nav>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script defer src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

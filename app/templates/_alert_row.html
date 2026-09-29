@@ -1,0 +1,155 @@
+{% set p = alert.engine.latest_prediction %}
+{% set driver = p.top_sensors[0].name if p and p.top_sensors else '—' %}
+
+<tr id="alert-{{ alert.id }}" role="row"
+    class="alert-row alert-row-{{ alert.status }}"
+    data-alert-id="{{ alert.id }}">
+
+  {# Engine #}
+  <td>
+    <a href="{{ url_for('main.engine_detail', engine_id=alert.engine.id) }}"
+       class="engine-link">{{ alert.engine.tag }}</a>
+    <span class="dataset-pill">{{ alert.engine.dataset }}</span>
+  </td>
+
+  {# Fault mode (recognition over recall) #}
+  <td>
+    {% if alert.engine.fault_mode %}
+      <span class="fault-pill" title="Demonstration fault mode">{{ alert.engine.fault_mode }}</span>
+    {% else %}
+      <span class="muted">—</span>
+    {% endif %}
+  </td>
+
+  {# RUL #}
+  <td>
+    {% if p %}
+      <span class="rul-value">{{ p.rul }}</span>
+      <span class="rul-unit">cycles</span>
+      <div class="ci-text" title="80% confidence interval">
+        {{ p.ci_low }}–{{ p.ci_high }}
+      </div>
+    {% else %}
+      <span class="muted">—</span>
+    {% endif %}
+  </td>
+
+  {# Top driver #}
+  <td>
+    <span class="driver-chip driver-chip-1" title="Sensor driving the prediction">
+      {{ driver }}
+    </span>
+  </td>
+
+  {# Status #}
+  <td>
+    <span class="status-chip status-{{ alert.status }}">
+      <span class="status-dot" aria-hidden="true"></span>
+      {{ alert.status|capitalize }}
+    </span>
+    {% if alert.status == 'snoozed' and alert.snoozed_until %}
+      <div class="muted snooze-meta"
+           title="Reason: {{ alert.snooze_reason or 'n/a' }}">
+        until {{ alert.snoozed_until.strftime('%b %d %H:%M') }}
+      </div>
+    {% endif %}
+  </td>
+
+  {# Assigned #}
+  <td>
+    {% if alert.assignee %}
+      {{ alert.assignee.username }}
+    {% else %}
+      <span class="muted">unassigned</span>
+    {% endif %}
+  </td>
+
+  {# Opened #}
+  <td class="muted opened-cell"
+      data-epoch="{{ alert.created_at.timestamp() if alert.created_at else '' }}">
+    {{ alert.created_at.strftime('%b %d, %H:%M') if alert.created_at else '—' }}
+    {% if alert.created_at %}
+      <div class="rel-time" aria-hidden="true"></div>
+    {% endif %}
+  </td>
+
+  {# Actions (RBAC-gated) #}
+  <td class="col-actions">
+    <div class="row-actions">
+      {% if alert.status == 'open' and (can('ack_alert') or (can('ack_own_alert') and alert.assigned_to == current_user.id)) %}
+        <button class="btn-tiny"
+                hx-post="{{ url_for('main.ack_alert', alert_id=alert.id) }}"
+                hx-target="#alert-{{ alert.id }}"
+                hx-swap="outerHTML"
+                aria-label="Acknowledge alert for {{ alert.engine.tag }}">
+          Ack
+        </button>
+      {% endif %}
+
+      {% if alert.status in ('open', 'acknowledged') and can('snooze_alert') %}
+        <button class="btn-tiny"
+                type="button"
+                data-snooze-toggle="snooze-{{ alert.id }}"
+                aria-expanded="false"
+                aria-controls="snooze-{{ alert.id }}"
+                aria-label="Snooze alert for {{ alert.engine.tag }}">
+          Snooze
+        </button>
+      {% endif %}
+
+      {% if alert.status != 'resolved' and can('resolve_alert') %}
+        <button class="btn-tiny"
+                hx-post="{{ url_for('main.resolve_alert', alert_id=alert.id) }}"
+                hx-target="#alert-{{ alert.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Mark this alert as resolved?"
+                aria-label="Resolve alert for {{ alert.engine.tag }}">
+          Resolve
+        </button>
+      {% endif %}
+
+      {% if can('assign_alert') and alert.status != 'resolved' %}
+        <form class="inline-form"
+              hx-post="{{ url_for('main.assign_alert', alert_id=alert.id) }}"
+              hx-target="#alert-{{ alert.id }}"
+              hx-swap="outerHTML">
+          <label class="sr-only" for="assign-{{ alert.id }}">Assign to engineer</label>
+          <select id="assign-{{ alert.id }}" name="user_id" required>
+            <option value="">Assign to…</option>
+            {% for engineer in engineers %}
+              <option value="{{ engineer.id }}" {% if alert.assigned_to == engineer.id %}selected{% endif %}>{{ engineer.username }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn-tiny">Assign</button>
+        </form>
+      {% endif %}
+    </div>
+
+    {# Inline snooze form, hidden until toggled. Server rejects empty reason. #}
+    {% if alert.status in ('open', 'acknowledged') and can('snooze_alert') %}
+      <form id="snooze-{{ alert.id }}"
+            class="snooze-form"
+            hidden
+            hx-post="{{ url_for('main.snooze_alert', alert_id=alert.id) }}"
+            hx-target="#alert-{{ alert.id }}"
+            hx-swap="outerHTML">
+        <label for="reason-{{ alert.id }}" class="sr-only">Snooze reason</label>
+        <input id="reason-{{ alert.id }}"
+               name="reason"
+               type="text"
+               placeholder="Reason (required)"
+               required
+               maxlength="200"
+               autocomplete="off">
+        <label for="hours-{{ alert.id }}" class="sr-only">Snooze duration in hours</label>
+        <select id="hours-{{ alert.id }}" name="hours">
+          <option value="4">4h</option>
+          <option value="8">8h</option>
+          <option value="24" selected>24h</option>
+          <option value="72">3d</option>
+        </select>
+        <button type="submit" class="btn-tiny">Confirm</button>
+      </form>
+    {% endif %}
+  </td>
+</tr>

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Models — RUL Monitor{% endblock %}
+{% block content %}
+
+{# Header (HCI: summary at the top) #}
+<div class="page-header">
+  <div>
+    <h1>Model registry</h1>
+    <p class="muted">
+      Every candidate the fleet can serve. Promoting a version activates
+      it for all future predictions on its dataset.
+    </p>
+  </div>
+</div>
+
+{# KPI strip #}
+<section class="kpi-strip" aria-label="Registry summary">
+  <div class="kpi">
+    <span class="kpi-num">{{ versions|length }}</span>
+    <span class="kpi-label">Versions</span>
+  </div>
+  <div class="kpi kpi-healthy">
+    <span class="kpi-num">{{ active_versions|length }}</span>
+    <span class="kpi-label">Active</span>
+  </div>
+  {% for ds in ['FD001', 'FD003'] %}
+    {% set rmse = rmse_by_dataset.get(ds) %}
+    <div class="kpi">
+      <span class="kpi-num">
+        {{ '%.2f'|format(rmse) if rmse is not none else '—' }}
+      </span>
+      <span class="kpi-label">{{ ds }} RMSE</span>
+    </div>
+  {% endfor %}
+</section>
+
+{# Version list #}
+{% for v in versions %}
+  {% set is_active = v.is_active %}
+
+  <article class="model-card {% if is_active %}model-card-active{% endif %}"
+           aria-labelledby="model-{{ v.id }}-name">
+
+    <header class="model-card-head">
+      <div>
+        <h2 id="model-{{ v.id }}-name" class="model-name">
+          {{ v.name }}
+          {% if is_active %}
+            <span class="status-chip status-healthy" title="Serving live predictions">
+              <span class="status-dot" aria-hidden="true"></span>active
+            </span>
+          {% else %}
+            <span class="status-chip status-unknown" title="Retired — not serving traffic">
+              <span class="status-dot" aria-hidden="true"></span>retired
+            </span>
+          {% endif %}
+        </h2>
+        <p class="model-sub muted">
+          <span class="dataset-pill">{{ v.dataset_id }}</span>
+          · window {{ v.window_size }} cycles
+          · registered {{ v.created_at.strftime('%b %d, %Y') }}
+        </p>
+      </div>
+
+      {# Actions (RBAC-gated) #}
+      <div class="model-actions">
+        {% if not is_active and can('promote_model') %}
+          <form method="post"
+                action="{{ url_for('main.promote_model', model_id=v.id) }}"
+                onsubmit="return confirm('Promote {{ v.name }} to active? All new {{ v.dataset_id }} predictions will use this version.');">
+            <button type="submit" class="btn-primary"
+                    aria-label="Promote {{ v.name }} to active for {{ v.dataset_id }}">
+              Promote
+            </button>
+          </form>
+        {% endif %}
+
+        {% if is_active and v.id in rollback_targets and can('rollback_model') %}
+          <form method="post"
+                action="{{ url_for('main.rollback_model', model_id=v.id) }}"
+                onsubmit="return confirm('Roll back {{ v.dataset_id }} to the previous model version?');">
+            <button type="submit" class="btn-tiny btn-danger"
+                    aria-label="Roll back {{ v.dataset_id }} to the previous model version">
+              Rollback
+            </button>
+          </form>
+        {% endif %}
+      </div>
+    </header>
+
+    {# Metrics #}
+    <dl class="model-facts">
+      <dt>Validation RMSE</dt>
+      <dd>
+        <span class="metric-value metric-{{ 'good' if v.val_rmse and v.val_rmse < 12 else 'warn' if v.val_rmse and v.val_rmse < 16 else 'bad' }}">
+          {{ '%.2f'|format(v.val_rmse) if v.val_rmse is not none else '—' }}
+        </span>
+        <span class="muted">cycles</span>
+      </dd>
+
+      <dt>CMAPSS score</dt>
+      <dd>
+        <span class="metric-value">
+          {{ '%.1f'|format(v.cmapss_score) if v.cmapss_score is not none else '—' }}
+        </span>
+        <span class="muted">lower is better</span>
+      </dd>
+
+      <dt>Weight path</dt>
+      <dd><code class="mono">{{ v.path }}</code></dd>
+
+      <dt>Registered</dt>
+      <dd>{{ v.created_at.strftime('%b %d, %Y %H:%M UTC') }}</dd>
+    </dl>
+
+    {% if is_active %}
+      <p class="disclaimer" role="note">
+        This version is currently serving all new predictions for
+        <strong>{{ v.dataset_id }}</strong> units.
+      </p>
+    {% endif %}
+  </article>
+{% else %}
+  <section class="panel">
+    <p class="empty-state">
+      No model versions registered yet. Seed the fleet first:
+      <code>python -m app.seed</code>.
+    </p>
+  </section>
+{% endfor %}
+
+{% endblock %}

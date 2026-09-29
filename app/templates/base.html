@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}RUL Monitor{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <script defer src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <nav class="topbar" aria-label="Primary">
+    <div class="topbar-left">
+      <a href="{{ url_for('main.dashboard') }}" class="brand" aria-label="RUL Monitor home">
+        RUL&nbsp;Monitor
+      </a>
+      <a href="{{ url_for('main.dashboard') }}"
+         class="navlink {% if request.endpoint == 'main.dashboard' %}navlink-active{% endif %}"
+         {% if request.endpoint == 'main.dashboard' %}aria-current="page"{% endif %}>Fleet</a>
+      <a href="{{ url_for('main.alerts') }}"
+         class="navlink {% if request.endpoint == 'main.alerts' %}navlink-active{% endif %}"
+         {% if request.endpoint == 'main.alerts' %}aria-current="page"{% endif %}>Alerts</a>
+      {% if can('view_models') %}
+        <a href="{{ url_for('main.models_page') }}"
+           class="navlink {% if request.endpoint == 'main.models_page' %}navlink-active{% endif %}"
+           {% if request.endpoint == 'main.models_page' %}aria-current="page"{% endif %}>Models</a>
+      {% endif %}
+      {% if can('view_audit') %}
+        <a href="{{ url_for('main.audit_page') }}"
+           class="navlink {% if request.endpoint == 'main.audit_page' %}navlink-active{% endif %}"
+           {% if request.endpoint == 'main.audit_page' %}aria-current="page"{% endif %}>Audit</a>
+      {% endif %}
+    </div>
+
+    <div class="topbar-right">
+      {# Visibility of system status: tells the user whether data is live. #}
+      <span id="stream-chip" class="topbar-stream" title="Live telemetry status"
+            aria-live="polite" aria-atomic="true">
+        <span class="stream-dot" data-state="connecting"></span>
+        <span class="stream-label">connecting…</span>
+      </span>
+
+      {# Help: recognition over recall for abbreviations like RUL / CI. #}
+      <details class="help-pop">
+        <summary class="btn-icon" aria-label="Help and glossary">?</summary>
+        <div class="help-body" role="dialog">
+          <h4>Glossary</h4>
+          <dl>
+            <dt>RUL</dt><dd>Remaining useful life; predicted cycles until maintenance is due.</dd>
+            <dt>CI</dt><dd>80% confidence interval on the RUL prediction.</dd>
+            <dt>Drivers</dt><dd>Sensors that moved the prediction most this window.</dd>
+            <dt>Status</dt><dd><span class="dot d-critical"></span>critical (≤20) ·
+                <span class="dot d-watch"></span>watch (≤50) ·
+                <span class="dot d-healthy"></span>healthy</dd>
+          </dl>
+        </div>
+      </details>
+
+      <button id="theme-toggle" class="btn-icon" aria-label="Toggle dark mode">◐</button>
+
+      {% if current_user.is_authenticated %}
+        <span class="user-chip" title="Signed in as {{ current_user.role }}">
+          {{ current_user.username }} <span class="role-pill role-{{ current_user.role }}">{{ current_user.role }}</span>
+        </span>
+        <a href="{{ url_for('auth.logout') }}" class="navlink">Sign out</a>
+      {% endif %}
+    </div>
+  </nav>
+
+  <main id="main" class="page" role="main">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-stack" aria-live="polite">
+          {% for cat, msg in messages %}
+            <div class="flash flash-{{ cat }}">{{ msg }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    // Respect user's motion preference (affects stream pulse animation etc.)
+    (function () {
+      var root = document.documentElement;
+      var mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+      var apply = function () {
+        root.classList.toggle("reduce-motion", mq.matches);
+      };
+      apply();
+      mq.addEventListener && mq.addEventListener("change", apply);
+    })();
+  </script>
+
+  <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block title %}{{ engine.tag }} — RUL Monitor{% endblock %}
+{% block content %}
+{% set p = engine.latest_prediction %}
+
+{# Header + summary KPI strip (HCI: summary at the top) #}
+<header class="engine-header">
+  <div class="engine-header-top">
+    <div>
+      <h1>
+        {{ engine.tag }}
+        <span class="status-chip status-{{ engine.status }}">
+          <span class="status-dot" aria-hidden="true"></span>
+          {{ engine.status|capitalize }}
+        </span>
+      </h1>
+      <p class="engine-sub">
+        <span class="dataset-pill">{{ engine.dataset }}</span>
+        {% if engine.fault_mode %}
+          <span class="fault-pill" title="Demonstration fault mode; mapping is synthetic">{{ engine.fault_mode }}</span>
+        {% endif %}
+        <span class="muted">
+          Unit #{{ engine.unit_number }} · last reading
+          {{ engine.last_reading_at.strftime('%b %d, %H:%M') if engine.last_reading_at else '—' }}
+          · cycle {{ engine.last_cycle }}
+        </span>
+      </p>
+    </div>
+  </div>
+
+  {% if p %}
+  <div class="engine-kpis" aria-label="Prediction summary">
+    <div class="ekpi ekpi-rul">
+      <span class="ekpi-label" title="Remaining useful life">RUL</span>
+      <span class="ekpi-value">{{ p.rul }}<small> cycles</small></span>
+      <span class="ekpi-sub">~{{ (p.rul / 6)|round(1) }} days at current usage</span>
+    </div>
+    <div class="ekpi ekpi-ci">
+      <span class="ekpi-label" title="80% confidence interval">80% CI</span>
+      <span class="ekpi-value">{{ p.ci_low }}–{{ p.ci_high }}<small> cycles</small></span>
+      <span class="ekpi-sub">Normal approximation on held-out residuals</span>
+    </div>
+    <div class="ekpi ekpi-confidence">
+      <span class="ekpi-label">Confidence</span>
+      <span class="ekpi-value conf-{{ p.confidence_label }}">
+        {{ p.confidence_label|capitalize }}
+      </span>
+      <span class="ekpi-sub">
+        {% if p.confidence_label == 'high' %}Narrow interval — trust this reading
+        {% elif p.confidence_label == 'medium' %}Moderate uncertainty — cross-check with sensors
+        {% else %}Wide interval — verify with inspection{% endif %}
+      </span>
+    </div>
+    <div class="ekpi ekpi-model">
+      <span class="ekpi-label">Model</span>
+      <span class="ekpi-value">
+        {{ p.model_version.name if p.model_version else '—' }}
+      </span>
+      <span class="ekpi-sub">
+        input through cycle {{ p.input_cycle or '—' }}
+        · generated {{ p.created_at.strftime('%b %d, %H:%M') }}
+      </span>
+    </div>
+  </div>
+
+  {# Recognition over recall: driver chips visible from every tab #}
+  {% if p.top_sensors %}
+  <div class="driver-chips" aria-label="Top sensor drivers">
+    <span class="muted">Top drivers this window:</span>
+    {% for s in p.top_sensors %}
+      <span class="driver-chip driver-chip-{{ loop.index }}"
+            title="Weight {{ (s.weight * 100)|round }}% of the model's recent attention">
+        {{ s.name }} · {{ (s.weight * 100)|round }}%
+      </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+</header>
+
+{# Tabs (HCI: user control, URL-addressable state) #}
+<nav class="tabs" role="tablist" aria-label="Engine sections">
+  <a role="tab" aria-selected="{{ 'true' if tab == 'overview' else 'false' }}"
+     class="tab {% if tab == 'overview' %}tab-active{% endif %}"
+     href="?tab=overview">Overview</a>
+  <a role="tab" aria-selected="{{ 'true' if tab == 'sensors' else 'false' }}"
+     class="tab {% if tab == 'sensors' %}tab-active{% endif %}"
+     href="?tab=sensors">Sensors</a>
+  <a role="tab" aria-selected="{{ 'true' if tab == 'notes' else 'false' }}"
+     class="tab {% if tab == 'notes' %}tab-active{% endif %}"
+     href="?tab=notes">Notes{% if engine.notes %} ({{ engine.notes|length }}){% endif %}</a>
+  <a role="tab" aria-selected="{{ 'true' if tab == 'model' else 'false' }}"
+     class="tab {% if tab == 'model' %}tab-active{% endif %}"
+     href="?tab=model">Model</a>
+</nav>
+
+{# Overview #}
+{% if tab == 'overview' %}
+  <section class="panel" aria-labelledby="overview-heading">
+    <h3 id="overview-heading">What's driving this prediction</h3>
+
+    {% if p %}
+      <ul class="sensor-drivers">
+        {% for s in p.top_sensors %}
+          <li>
+            <span class="driver-name" title="Sensor {{ s.name }}">{{ s.name }}</span>
+            <div class="driver-bar" role="progressbar"
+                 aria-valuenow="{{ (s.weight * 100)|round }}"
+                 aria-valuemin="0" aria-valuemax="100">
+              <div style="width: {{ (s.weight * 100)|round }}%"></div>
+            </div>
+            <span class="driver-pct">{{ (s.weight * 100)|round }}%</span>
+          </li>
+        {% endfor %}
+      </ul>
+
+      <p class="disclaimer" role="note">
+        Prediction is decision support, not a replacement for inspection.
+        Confirm anomalies on the <a href="?tab=sensors">Sensors</a> tab before acting.
+      </p>
+    {% else %}
+      <p class="empty-state">
+        No prediction available yet. This engine is still in its warm-up window —
+        the model needs at least 30 cycles of history.
+      </p>
+    {% endif %}
+
+    {# Latest notes preview — saves a click. #}
+    {% if engine.notes %}
+      <h4 class="section-sub">Latest notes</h4>
+      <ul class="note-preview">
+        {% for note in engine.notes[:3] %}
+          <li>
+            <span class="note-sev note-{{ note.severity }}">{{ note.severity }}</span>
+            <span class="note-preview-body">{{ note.body[:120] }}{% if note.body|length > 120 %}…{% endif %}</span>
+            <span class="muted">— {{ note.author.username }}, {{ note.created_at.strftime('%b %d') }}</span>
+          </li>
+        {% endfor %}
+        {% if engine.notes|length > 3 %}
+          <li><a href="?tab=notes">See all {{ engine.notes|length }} notes →</a></li>
+        {% endif %}
+      </ul>
+    {% endif %}
+  </section>
+
+{# Sensors tab #}
+{% elif tab == 'sensors' %}
+  <section class="panel" aria-labelledby="rul-trend-heading">
+    <header class="panel-head">
+      <h3 id="rul-trend-heading">Predicted RUL over time</h3>
+      <div class="legend" aria-label="Chart legend">
+        <span class="legend-swatch swatch-rul"></span> predicted RUL
+        <span class="legend-swatch swatch-ci"></span> 80% CI
+        <span class="legend-swatch swatch-critical"></span> critical (20)
+        <span class="legend-swatch swatch-watch"></span> watch (50)
+      </div>
+    </header>
+    <canvas id="rul-trend-chart" data-engine="{{ engine.id }}"
+            height="80" role="img"
+            aria-label="Predicted remaining useful life over cycles, with confidence band"></canvas>
+  </section>
+
+  <section class="panel" style="margin-top:14px;" aria-labelledby="sensor-heading">
+    <header class="panel-head">
+      <h3 id="sensor-heading">Sensor trends</h3>
+      <span class="muted">
+        Top model drivers charted first · normalized per sensor (raw values on hover) · anomalies flagged with ×
+      </span>
+    </header>
+    <canvas id="sensor-chart" data-engine="{{ engine.id }}"
+            height="100" role="img"
+            aria-label="Raw sensor readings over cycles for the top driver sensors"></canvas>
+  </section>
+
+{# Notes tab #}
+{% elif tab == 'notes' %}
+  <section class="panel" aria-labelledby="notes-heading">
+    {% if can('add_note') %}
+    <h3 id="notes-heading">Add a note</h3>
+
+    <form id="note-form" class="note-form"
+          hx-post="{{ url_for('main.add_note', engine_id=engine.id) }}"
+          hx-target="#notes-list"
+          hx-swap="afterbegin"
+          autocomplete="off">
+      <label for="note-body" class="sr-only">Observation</label>
+      <textarea id="note-body" name="body" required
+                placeholder="What did you observe? e.g., increased vibration at fan speed…"></textarea>
+
+      <div class="note-form-row">
+        <label for="note-severity">Severity</label>
+        <select id="note-severity" name="severity">
+          {% for s in severity_choices %}
+            <option value="{{ s }}">{{ s|capitalize }}</option>
+          {% endfor %}
+        </select>
+
+        <fieldset class="tag-select">
+          <legend class="sr-only">Tags</legend>
+          {% for t in tag_choices %}
+            <label><input type="checkbox" name="tags" value="{{ t }}"> {{ t }}</label>
+          {% endfor %}
+        </fieldset>
+      </div>
+
+      <label for="note-action" class="sr-only">Action taken (optional)</label>
+      <textarea id="note-action" name="action_taken"
+                placeholder="Action taken (optional)"></textarea>
+
+      <div class="note-form-footer">
+        <span class="save-indicator" id="save-indicator" aria-live="polite"></span>
+        <button type="submit" id="note-submit">Save note</button>
+      </div>
+    </form>
+    {% endif %}
+
+    <div id="notes-list" role="log" aria-live="polite">
+      {% if not engine.notes %}
+        <p class="empty-state">
+          No notes yet. Add the first observation for this engine.
+        </p>
+      {% endif %}
+      {% for note in engine.notes %}
+        {% include "_note_card.html" %}
+      {% endfor %}
+    </div>
+  </section>
+
+{# Model tab #}
+{% elif tab == 'model' %}
+  <section class="panel" aria-labelledby="model-heading">
+    <h3 id="model-heading">Model provenance</h3>
+    {% if p and p.model_version %}
+      <dl class="model-facts">
+        <dt>Model</dt><dd>{{ p.model_version.name }}</dd>
+        <dt>Model ID</dt><dd>{{ p.model_version.id }}</dd>
+        <dt>Input window</dt><dd>{{ p.model_version.window_size }} cycles</dd>
+        <dt>Trained on</dt><dd>{{ p.model_version.trained_on }}</dd>
+        <dt>Validation RMSE</dt><dd>{{ '%.2f'|format(p.model_version.val_rmse) }} cycles</dd>
+        {% if p.model_version.cmapss_score is not none %}
+          <dt>CMAPSS score</dt><dd>{{ '%.1f'|format(p.model_version.cmapss_score) }}</dd>
+        {% endif %}
+        <dt>Active</dt>
+        <dd>
+          {% if p.model_version.is_active %}
+            <span class="status-chip status-healthy"><span class="status-dot"></span>active</span>
+          {% else %}
+            <span class="status-chip status-unknown"><span class="status-dot"></span>retired</span>
+          {% endif %}
+        </dd>
+        <dt>Prediction generated</dt><dd>{{ p.created_at.strftime('%b %d, %Y %H:%M') }}</dd>
+        <dt>Input data through cycle</dt><dd>{{ p.input_cycle }}</dd>
+      </dl>
+
+      <p class="disclaimer" role="note">
+        Predictions are produced by the model's numpy inference path
+        (<code>app/inference.py</code>), which mirrors the training-time
+        forward pass exactly. Confidence interval is a normal approximation
+        on held-out residuals.
+      </p>
+    {% else %}
+      <p class="empty-state">No model run recorded for this engine yet.</p>
+    {% endif %}
+  </section>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script defer src="{{ url_for('static', filename='js/engine.js') }}"></script>
+{% endblock %}
